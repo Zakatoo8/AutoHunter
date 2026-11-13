@@ -135,6 +135,8 @@ def build_config_text(cfg: dict) -> str:
     return text
 
 
+WEBAPP_URL = "https://zakatoo8.github.io/AutoHunter/"
+
 def build_main_keyboard(cfg: dict) -> InlineKeyboardMarkup:
     pts_short = "Оригинал" if cfg["pts_type"] == "original" else "Без дублей" if cfg["pts_type"] == "no_duplicate" else "Любой"
     trans_short = "АКПП" if cfg["transmission"] == "auto" else "МКПП" if cfg["transmission"] == "manual" else "Любая"
@@ -144,6 +146,9 @@ def build_main_keyboard(cfg: dict) -> InlineKeyboardMarkup:
     vaz_btn = "✅ Без ВАЗ" if cfg["exclude_vaz"] else "⚪️ Включая ВАЗ"
 
     kb = [
+        [
+            InlineKeyboardButton(text="📱 ОТКРЫТЬ MINI APP (УДОБНО В 1 КЛИК) 📱", web_app=types.WebAppInfo(url=WEBAPP_URL))
+        ],
         [
             InlineKeyboardButton(text=f"🚗 Марка: {cfg['brand']}", callback_data="menu_brand"),
             InlineKeyboardButton(text=f"💰 Цена: {cfg['price_label']}", callback_data="menu_price")
@@ -177,11 +182,19 @@ def build_main_keyboard(cfg: dict) -> InlineKeyboardMarkup:
 
 @dp.message(Command("start"))
 @dp.message(Command("filter"))
-@dp.message(F.text)
 async def cmd_start(message: types.Message):
     cfg = get_user_cfg(message.from_user.id)
     text = build_config_text(cfg)
     kb = build_main_keyboard(cfg)
+    
+    reply_kb = types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="📱 Открыть MiniApp (Фильтры)", web_app=types.WebAppInfo(url=WEBAPP_URL))],
+            [types.KeyboardButton(text="📋 Активные фильтры"), types.KeyboardButton(text="🗑 Сбросить поиск")]
+        ],
+        resize_keyboard=True
+    )
+    await message.answer("🎯 <b>AutoHunter запущен!</b> Нажми кнопку ниже, чтобы открыть MiniApp:", reply_markup=reply_kb, parse_mode=ParseMode.HTML)
     await message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 
