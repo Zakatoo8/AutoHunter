@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoHunter - Панель Мониторинга Авто</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#10b981', 600: '#059669', 700: '#047857' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #0b0f17; font-family: system-ui, -apple-system, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+  </style>
+</head>
+<body class="text-gray-100 min-h-screen flex flex-col">
+
+  <!-- Navbar -->
+  <header class="border-b border-gray-800 bg-[#111622]/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+          <i class="fa-solid fa-crosshairs text-xl text-black font-bold"></i>
+        </div>
+        <div>
+          <span class="text-xl font-bold tracking-tight text-white">Auto<span class="text-emerald-400">Hunter</span></span>
+          <span class="text-xs ml-2 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Core v1.0</span>
+        </div>
+      </div>
+
+      <!-- Quick Stats & Status -->
+      <div class="flex items-center space-x-4">
+        <div class="hidden md:flex items-center space-x-6 text-sm text-gray-400 border-r border-gray-800 pr-6">
+          <div><span class="text-gray-500">Задач:</span> <span id="stat-tasks" class="text-white font-semibold">0</span></div>
+          <div><span class="text-gray-500">Найдено авто:</span> <span id="stat-cars" class="text-emerald-400 font-semibold">0</span></div>
+          <div class="flex items-center space-x-2">
+            <span class="relative flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span class="text-gray-300 text-xs font-medium">Мониторинг активен</span>
+          </div>
+        </div>
+
+        <button onclick="openSettingsModal()" class="p-2.5 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300 hover:text-white transition" title="Настройки Telegram">
+          <i class="fa-brands fa-telegram text-lg text-sky-400"></i>
+        </button>
+        <button onclick="openNewTaskModal()" class="flex items-center space-x-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-black font-semibold text-sm transition shadow-lg shadow-emerald-500/20">
+          <i class="fa-solid fa-plus text-xs"></i>
+          <span>Создать фильтр</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 w-full">
+    
+    <!-- Left Column: Search Tasks (4 cols) -->
+    <div class="lg:col-span-4 space-y-6">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-sliders text-emerald-400"></i>
+          <span>Фильтры поиска</span>
+        </h2>
+        <span id="active-tasks-badge" class="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded-md">0 активно</span>
+      </div>
+
+      <!-- Task List Container -->
+      <div id="tasks-list" class="space-y-3">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+
+    <!-- Right Column: Live Feed of Cars (8 cols) -->
+    <div class="lg:col-span-8 space-y-6">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-bolt text-amber-400"></i>
+          <span>Лента найденных авто</span>
+        </h2>
+        <div class="flex items-center space-x-2">
+          <select id="feed-filter-platform" onchange="renderCars()" class="bg-gray-800 border border-gray-700 text-xs rounded-lg px-3 py-1.5 text-gray-300 focus:outline-none">
+            <option value="all">Все площадки</option>
+            <option value="drom">Drom.ru</option>
+            <option value="avito">Avito</option>
+            <option value="autoru">Auto.ru</option>
+          </select>
+          <button onclick="loadCars()" class="p-1.5 text-gray-400 hover:text-white rounded bg-gray-800/80 hover:bg-gray-700" title="Обновить">
+            <i class="fa-solid fa-rotate-right text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Cars Feed Container -->
+      <div id="cars-feed" class="space-y-4">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal: Create / Edit Search Task -->
+  <div id="task-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-[#141b27] border border-gray-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-4 border-b border-gray-800">
+        <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-car-side text-emerald-400"></i>
+          <span>Новый фильтр мониторинга</span>
+        </h3>
+        <button onclick="closeNewTaskModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <form id="task-form" onsubmit="handleSaveTask(event)" class="mt-5 space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1">Название фильтра (для себя)</label>
+          <input type="text" id="task-name" required placeholder="Например: Camry 50/55 от хозяина" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Марка авто</label>
+            <input type="text" id="task-brand" placeholder="Toyota, BMW, Lada..." class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Модель</label>
+            <input type="text" id="task-model" placeholder="Camry, X5, Vesta..." class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Год от</label>
+            <input type="number" id="task-year-min" placeholder="2012" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Год до</label>
+            <input type="number" id="task-year-max" placeholder="2018" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Цена от (₽)</label>
+            <input type="number" id="task-price-min" placeholder="500000" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Цена до (₽)</label>
+            <input type="number" id="task-price-max" placeholder="1800000" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Макс. пробег (км)</label>
+            <input type="number" id="task-mileage-max" placeholder="160000" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Макс. владельцев</label>
+            <input type="number" id="task-owners-max" placeholder="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1">Площадка</label>
+          <select id="task-platform" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+            <option value="all">Все (Drom, Avito, Auto.ru)</option>
+            <option value="drom">Только Drom.ru</option>
+            <option value="avito">Только Avito</option>
+            <option value="autoru">Только Auto.ru</option>
+          </select>
+        </div>
+
+        <div class="space-y-2 pt-2 border-t border-gray-800">
+          <label class="flex items-center space-x-2 text-xs text-gray-300 cursor-pointer">
+            <input type="checkbox" id="task-exclude-dealers" checked class="w-4 h-4 rounded text-emerald-500 focus:ring-0 bg-gray-900 border-gray-700">
+            <span>Исключать автосалоны, дилеров и перекупов (только частники)</span>
+          </label>
+          <label class="flex items-center space-x-2 text-xs text-gray-300 cursor-pointer">
+            <input type="checkbox" id="task-exclude-damaged" checked class="w-4 h-4 rounded text-emerald-500 focus:ring-0 bg-gray-900 border-gray-700">
+            <span>Исключать битые, аварийные и требующие ремонта</span>
+          </label>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1">Свои стоп-слова (через запятую)</label>
+          <input type="text" id="task-stop-words" placeholder="запрет, залог, без птс, арест, армянский" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+          <p class="text-[11px] text-gray-500 mt-1">Объявления с этими словами в описании будут отброшены.</p>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-4 border-t border-gray-800">
+          <button type="button" onclick="closeNewTaskModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm">Отмена</button>
+          <button type="submit" class="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-black font-semibold text-sm shadow-lg shadow-emerald-500/20">Сохранить и запустить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Telegram Settings -->
+  <div id="settings-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-[#141b27] border border-gray-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+      <div class="flex items-center justify-between pb-4 border-b border-gray-800">
+        <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+          <i class="fa-brands fa-telegram text-sky-400"></i>
+          <span>Настройки Telegram-оповещений</span>
+        </h3>
+        <button onclick="closeSettingsModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <form id="settings-form" onsubmit="handleSaveSettings(event)" class="mt-5 space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1">Telegram Bot Token (от @BotFather)</label>
+          <input type="text" id="setting-bot-token" placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1">Ваш Telegram Chat ID (куда слать алерты)</label>
+          <input type="number" id="setting-chat-id" placeholder="Например: 987654321" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none">
+          <p class="text-[11px] text-gray-500 mt-1">Узнать свой ID можно в боте @userinfobot</p>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-4 border-t border-gray-800">
+          <button type="button" onclick="closeSettingsModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm">Закрыть</button>
+          <button type="submit" class="px-5 py-2 rounded-lg bg-sky-500 hover:bg-sky-600 text-white font-semibold text-sm">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Client-side script -->
+  <script>
+    let allCars = [];
+    let allTasks = [];
+
+    async function loadTasks() {
+      try {
+        const res = await fetch('/api/tasks');
+        allTasks = await res.json();
+        renderTasks();
+      } catch (err) {
+        console.error("Error loading tasks:", err);
+      }
+    }
+
+    async function loadCars() {
+      try {
+        const res = await fetch('/api/cars');
+        allCars = await res.json();
+        renderCars();
+      } catch (err) {
+        console.error("Error loading cars:", err);
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        document.getElementById('stat-tasks').innerText = data.total_tasks;
+        document.getElementById('stat-cars').innerText = data.total_cars;
+        document.getElementById('active-tasks-badge').innerText = `${data.active_tasks} активно`;
+      } catch (err) {}
+    }
+
+    function renderTasks() {
+      const container = document.getElementById('tasks-list');
+      if (allTasks.length === 0) {
+        container.innerHTML = `
+          <div class="border border-dashed border-gray-800 rounded-xl p-6 text-center text-gray-500 text-sm">
+            <i class="fa-solid fa-list-check text-2xl mb-2 text-gray-600"></i>
+            <p>Нет созданных фильтров</p>
+            <p class="text-xs text-gray-600 mt-1">Нажмите «Создать фильтр» выше</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = allTasks.map(t => `
+        <div class="p-4 rounded-xl border ${t.is_active ? 'border-gray-800 bg-[#121824]' : 'border-gray-900 bg-[#0d121b] opacity-60'} transition hover:border-gray-700">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="flex items-center space-x-2">
+                <span class="font-bold text-white text-sm">${t.name}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 uppercase font-mono">${t.platform}</span>
+              </div>
+              <p class="text-xs text-emerald-400 mt-1 font-medium">
+                ${t.brand || 'Любая марка'} ${t.model || ''}
+              </p>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button onclick="toggleTask(${t.id})" class="text-xs px-2.5 py-1 rounded-md font-medium transition ${t.is_active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-gray-800 text-gray-400'}">
+                ${t.is_active ? 'ВКЛ' : 'ВЫКЛ'}
+              </button>
+              <button onclick="deleteTask(${t.id})" class="text-gray-500 hover:text-rose-400 text-xs p-1" title="Удалить">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="mt-3 grid grid-cols-2 gap-2 text-[11px] text-gray-400 border-t border-gray-800/60 pt-2">
+            <div>Цена: <span class="text-gray-200 font-medium">${t.price_min ? t.price_min.toLocaleString() : '0'} - ${t.price_max ? t.price_max.toLocaleString() : '∞'} ₽</span></div>
+            <div>Год: <span class="text-gray-200 font-medium">${t.year_min || '—'} - ${t.year_max || '—'}</span></div>
+            <div>Пробег до: <span class="text-gray-200 font-medium">${t.mileage_max ? t.mileage_max.toLocaleString() + ' км' : 'любой'}</span></div>
+            <div>Владельцев: <span class="text-gray-200 font-medium">${t.owners_max ? 'до ' + t.owners_max : 'любое'}</span></div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderCars() {
+      const platformFilter = document.getElementById('feed-filter-platform').value;
+      const filtered = platformFilter === 'all' ? allCars : allCars.filter(c => c.platform === platformFilter);
+      const container = document.getElementById('cars-feed');
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="border border-dashed border-gray-800 rounded-2xl p-12 text-center text-gray-500">
+            <i class="fa-solid fa-car text-4xl mb-3 text-gray-700"></i>
+            <p class="text-base font-medium text-gray-400">Пока нет найденных автомобилей</p>
+            <p class="text-xs text-gray-600 mt-1">Как только чекер найдет подходящие варианты, они мгновенно появятся здесь и улетят в Telegram</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(c => `
+        <div class="bg-[#121824] border border-gray-800 rounded-2xl p-4 sm:p-5 transition hover:border-gray-700 flex flex-col sm:flex-row gap-5">
+          <!-- Car Image -->
+          <div class="sm:w-56 h-40 rounded-xl overflow-hidden bg-gray-900 flex-shrink-0 relative">
+            <img src="${c.photo_url || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500'}" alt="${c.title}" class="w-full h-full object-cover">
+            <span class="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded shadow uppercase ${
+              c.platform === 'drom' ? 'bg-red-600 text-white' :
+              c.platform === 'avito' ? 'bg-emerald-600 text-white' : 'bg-sky-600 text-white'
+            }">${c.platform}</span>
+            <span class="absolute bottom-2 right-2 text-[10px] bg-black/70 backdrop-blur px-2 py-0.5 rounded text-gray-300">
+              ${c.first_seen_at}
+            </span>
+          </div>
+
+          <!-- Car Details -->
+          <div class="flex-1 flex flex-col justify-between">
+            <div>
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <h3 class="text-base font-bold text-white hover:text-emerald-400 transition">
+                    <a href="${c.url}" target="_blank">${c.title}</a>
+                  </h3>
+                  <p class="text-xs text-gray-400 mt-0.5 flex items-center space-x-2">
+                    <i class="fa-solid fa-location-dot text-gray-500"></i>
+                    <span>${c.city || 'Город не указан'}</span>
+                  </p>
+                </div>
+                <div class="text-right">
+                  <div class="text-xl font-extrabold text-emerald-400 whitespace-nowrap">
+                    ${c.price ? c.price.toLocaleString() + ' ₽' : 'Цена не указана'}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tags / Spec Badges -->
+              <div class="flex flex-wrap gap-2 mt-3">
+                <span class="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 border border-gray-700/60 font-medium">
+                  <i class="fa-solid fa-gauge text-gray-500 mr-1"></i>${c.mileage ? c.mileage.toLocaleString() + ' км' : 'Пробег н/д'}
+                </span>
+                <span class="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 border border-gray-700/60 font-medium">
+                  <i class="fa-solid fa-calendar text-gray-500 mr-1"></i>${c.year ? c.year + ' г.' : 'Год н/д'}
+                </span>
+                <span class="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 border border-gray-700/60 font-medium">
+                  <i class="fa-solid fa-user-check text-gray-500 mr-1"></i>${c.owners_count ? c.owners_count + ' вл.' : 'Владельцы н/д'}
+                </span>
+                <span class="text-xs px-2.5 py-1 rounded-md ${c.is_dealer ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'} font-medium">
+                  ${c.is_dealer ? '<i class="fa-solid fa-building mr-1"></i>Салон' : '<i class="fa-solid fa-user mr-1"></i>Собственник'}
+                </span>
+              </div>
+
+              <!-- Description Preview -->
+              ${c.description ? `
+                <p class="text-xs text-gray-400 mt-3 line-clamp-2 leading-relaxed bg-gray-900/50 p-2 rounded-lg border border-gray-800">
+                  ${c.description}
+                </p>
+              ` : ''}
+            </div>
+
+            <!-- Free Checks & Action Buttons -->
+            <div class="mt-4 pt-3 border-t border-gray-800/80 flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center space-x-2 text-xs">
+                ${c.nomerogram_url ? `
+                  <a href="${c.nomerogram_url}" target="_blank" class="px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 flex items-center space-x-1.5 transition">
+                    <i class="fa-solid fa-camera"></i>
+                    <span>Номерограм (${c.nomerogram_photos_count} фото)</span>
+                  </a>
+                ` : `
+                  <span class="text-gray-500 text-[11px]"><i class="fa-solid fa-circle-info mr-1"></i>Госномер скрыт</span>
+                `}
+                ${c.vin ? `
+                  <span class="text-[11px] font-mono text-gray-400 bg-gray-800/70 px-2 py-0.5 rounded border border-gray-700">VIN: ${c.vin.slice(0, 11)}***</span>
+                ` : ''}
+              </div>
+
+              <div class="flex items-center space-x-2">
+                <a href="${c.url}" target="_blank" class="px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs flex items-center space-x-1.5 transition">
+                  <span>Перейти к лоту</span>
+                  <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Modal controls
+    function openNewTaskModal() { document.getElementById('task-modal').classList.remove('hidden'); }
+    function closeNewTaskModal() { document.getElementById('task-modal').classList.add('hidden'); }
+    function openSettingsModal() { 
+      loadSettings();
+      document.getElementById('settings-modal').classList.remove('hidden'); 
+    }
+    function closeSettingsModal() { document.getElementById('settings-modal').classList.add('hidden'); }
+
+    async function handleSaveTask(e) {
+      e.preventDefault();
+      const payload = {
+        name: document.getElementById('task-name').value,
+        platform: document.getElementById('task-platform').value,
+        brand: document.getElementById('task-brand').value,
+        model: document.getElementById('task-model').value,
+        year_min: document.getElementById('task-year-min').value || null,
+        year_max: document.getElementById('task-year-max').value || null,
+        price_min: document.getElementById('task-price-min').value || null,
+        price_max: document.getElementById('task-price-max').value || null,
+        mileage_max: document.getElementById('task-mileage-max').value || null,
+        owners_max: document.getElementById('task-owners-max').value || null,
+        exclude_dealers: document.getElementById('task-exclude-dealers').checked,
+        exclude_damaged: document.getElementById('task-exclude-damaged').checked,
+        stop_words: document.getElementById('task-stop-words').value
+      };
+
+      await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      closeNewTaskModal();
+      document.getElementById('task-form').reset();
+      await loadTasks();
+      await loadStats();
+    }
+
+    async function toggleTask(taskId) {
+      await fetch(`/api/tasks/${taskId}/toggle`, { method: 'POST' });
+      await loadTasks();
+      await loadStats();
+    }
+
+    async function deleteTask(taskId) {
+      if (confirm('Удалить этот фильтр?')) {
+        await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+        await loadTasks();
+        await loadStats();
+      }
+    }
+
+    async function loadSettings() {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      document.getElementById('setting-bot-token').value = data.TG_BOT_TOKEN || '';
+      document.getElementById('setting-chat-id').value = data.TG_CHAT_ID || '';
+    }
+
+    async function handleSaveSettings(e) {
+      e.preventDefault();
+      const payload = {
+        TG_BOT_TOKEN: document.getElementById('setting-bot-token').value,
+        TG_CHAT_ID: document.getElementById('setting-chat-id').value ? parseInt(document.getElementById('setting-chat-id').value) : null
+      };
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      closeSettingsModal();
+      alert('Настройки сохранены!');
+    }
+
+    // Polling every 5s for live updates
+    loadTasks();
+    loadCars();
+    loadStats();
+    setInterval(() => {
+      loadStats();
+      loadCars();
+    }, 6000);
+  </script>
+</body>
+</html>
