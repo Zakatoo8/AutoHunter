@@ -25,7 +25,49 @@ def get_bot() -> Optional[Bot]:
     return bot
 
 
-# Default configurator state
+# --- Handler for Telegram Mini App Data ---
+@dp.message(F.web_app_data)
+async def handle_miniapp_data(message: types.Message):
+    try:
+        import json
+        payload = json.loads(message.web_app_data.data)
+
+        # Clean old tasks
+        existing = await get_active_tasks()
+        for t in existing:
+            await delete_task(t.id)
+
+        new_task = await create_task(payload)
+
+        p_str = f"{new_task.price_min or 0:,} — {new_task.price_max or '∞':,} ₽".replace(",", " ")
+        pts_label = "Только оригинал" if new_task.pts_type == "original" else "Без дубликатов" if new_task.pts_type == "no_duplicate" else "Любой"
+        trans_label = "Автомат" if new_task.transmission == "auto" else "Механика" if new_task.transmission == "manual" else "Любая"
+
+        text = (
+            "🚀 <b>ФИЛЬТР УСПЕШНО СОХРАНЕН ЧЕРЕЗ MINI APP!</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🚘 <b>Марка:</b> {new_task.brand or 'Любая'}\n"
+            f"🚫 <b>Исключено:</b> {new_task.exclude_brands_models or 'Нет'}\n"
+            f"💰 <b>Бюджет:</b> {p_str}\n"
+            f"📅 <b>Год:</b> от {new_task.year_min or 'любого'}\n"
+            f"⏱ <b>Пробег:</b> {f'до {new_task.mileage_max:,} км' if new_task.mileage_max else 'любой'}\n"
+            f"👥 <b>Владельцев:</b> {f'до {new_task.owners_max}' if new_task.owners_max else 'любое'}\n"
+            f"📄 <b>ПТС:</b> {pts_label}\n"
+            f"🕹 <b>КПП:</b> {trans_label}\n"
+            f"👤 <b>Продавец:</b> {'Только собственники' if new_task.exclude_dealers else 'Все'}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "⚡️ <b>МОНИТОРИНГ ЗАПУЩЕН!</b> Чекер слушает Drom, Auto.ru и Avito."
+        )
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎛 Открыть MiniApp заново", web_app=types.WebAppInfo(url=WEBAPP_URL))],
+            [InlineKeyboardButton(text="🗑 Остановить поиск", callback_data="reset_tasks")]
+        ])
+
+        await message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        logger.error(f"Error handling web_app_data: {e}")
+        await message.answer(f"Ошибка сохранения: {e}")
 default_config = {
     "brand": "Любая",
     "exclude_china": True,

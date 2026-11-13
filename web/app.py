@@ -48,6 +48,13 @@ async def get_index():
         return f.read()
 
 
+@app.get("/miniapp", response_class=HTMLResponse)
+async def get_miniapp():
+    path = os.path.join(os.path.dirname(__file__), "templates", "miniapp.html")
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
 @app.get("/api/tasks")
 async def list_tasks():
     tasks = await get_all_tasks()

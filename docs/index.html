@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AutoHunter MiniApp</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    body {
+      background-color: var(--tg-theme-bg-color, #0d1117);
+      color: var(--tg-theme-text-color, #f3f4f6);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .chip {
+      transition: all 0.15s ease-in-out;
+    }
+    .chip.active {
+      background-color: #10b981 !important;
+      color: #000000 !important;
+      font-weight: 700;
+      border-color: #10b981 !important;
+    }
+    .chip-danger.active {
+      background-color: #ef4444 !important;
+      color: #ffffff !important;
+      font-weight: 700;
+      border-color: #ef4444 !important;
+    }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body class="p-4 pb-28">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-5">
+    <div class="flex items-center space-x-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-black font-extrabold shadow-lg shadow-emerald-500/20">
+        <i class="fa-solid fa-crosshairs text-base"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-extrabold tracking-tight leading-tight">Auto<span class="text-emerald-400">Hunter</span></h1>
+        <p class="text-[11px] text-gray-400">Настройка фильтра поиска авто</p>
+      </div>
+    </div>
+    <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold uppercase">
+      MiniApp
+    </span>
+  </div>
+
+  <form id="filter-form" onsubmit="event.preventDefault(); submitFilter();" class="space-y-5">
+    
+    <!-- 1. Марка автомобиля -->
+    <div class="bg-gray-900/60 border border-gray-800 rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-2.5">
+        <label class="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+          <i class="fa-solid fa-car text-emerald-400"></i> Марка авто
+        </label>
+        <span id="selected-brand-label" class="text-xs font-semibold text-emerald-400">Любая</span>
+      </div>
+      <div class="flex flex-wrap gap-1.5" id="brand-chips">
+        <button type="button" class="chip active text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('')">Любая марка</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Toyota')">Toyota</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('BMW')">BMW</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Mercedes-Benz')">Mercedes</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Audi')">Audi</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Volkswagen')">VW</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Kia')">Kia</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Hyundai')">Hyundai</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Skoda')">Skoda</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Nissan')">Nissan</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Mazda')">Mazda</button>
+        <button type="button" class="chip text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="selectBrand('Lada')">Lada (ВАЗ)</button>
+      </div>
+      <input type="text" id="custom-brand" placeholder="Или напишите конкретную марку/модель..." class="w-full mt-3 bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500">
+    </div>
+
+    <!-- 2. Исключить марки / модели -->
+    <div class="bg-gray-900/60 border border-gray-800 rounded-2xl p-4">
+      <label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
+        <i class="fa-solid fa-ban text-rose-400"></i> Исключить из поиска (не показывать)
+      </label>
+      <div class="flex flex-wrap gap-1.5" id="exclude-chips">
+        <button type="button" class="chip-danger active text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="toggleExclude(this, 'chery, haval, geely, changan, omoda, jaecoo, exeed, jetour')">🇨🇳 Китайцев</button>
+        <button type="button" class="chip-danger text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="toggleExclude(this, 'lada, ваз, granta, vesta, niva')">🚗 АвтоВАЗ</button>
+        <button type="button" class="chip-danger text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="toggleExclude(this, 'daewoo, matiz, nexia')">🚗 Daewoo</button>
+        <button type="button" class="chip-danger text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200" onclick="toggleExclude(this, 'правый руль')">🇯🇵 Правый руль</button>
+      </div>
+    </div>
+
+    <!-- 3. Бюджет (Цена) -->
+    <div class="bg-gray-900/60 border border-gray-800 rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-2.5">
+        <label class="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+          <i class="fa-solid fa-ruble-sign text-emerald-400"></i> Бюджет (Цена)
+        </label>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <span class="text-[10px] text-gray-500 block mb-0.5">Цена от (₽)</span>
+          <input type="number" id="price-min" value="1000000" placeholder="0" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <span class="text-[10px] text-gray-500 block mb-0.5">Цена до (₽)</span>
+          <input type="number" id="price-max" value="2200000" placeholder="Без ограничений" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-emerald-500">
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        <button type="button" class="text-[11px] px-2.5 py-1 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300" onclick="setPresetPrice(0, 800000)">до 800к</button>
+        <button type="button" class="text-[11px] px-2.5 py-1 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300" onclick="setPresetPrice(800000, 1500000)">800к — 1.5м</button>
+        <button type="button" class="text-[11px] px-2.5 py-1 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300" onclick="setPresetPrice(1500000, 2500000)">1.5м — 2.5м</button>
+        <button type="button" class="text-[11px] px-2.5 py-1 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300" onclick="setPresetPrice(2500000, 4500000)">2.5м — 4.5м</button>
+      </div>
+    </div>
+
+    <!-- 4. Года выпуска и пробег -->
+    <div class="bg-gray-900/60 border border-gray-800 rounded-2xl p-4">
+      <label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
+        <i class="fa-solid fa-calendar-days text-emerald-400"></i> Год и Пробег
+      </label>
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <span class="text-[10px] text-gray-500 block mb-0.5">Год выпуска от</span>
+          <input type="number" id="year-min" value="2015" placeholder="Любой" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <span class="text-[10px] text-gray-500 block mb-0.5">Макс. пробег (км)</span>
+          <input type="number" id="mileage-max" value="150000" placeholder="Любой" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-emerald-500">
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        <button type="button" class="text-[11px] px-2.5 py-1 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300" onclick="document.getElementById('year-min').value = 2012">от 2012</button>
+        <button type="button" class="text-[11px] px-2.5 py-1 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300" onclick="document.getElementById('year-min').value = 2016">от 2016</button>
+        <button type="button" class="text-[11px] px-2.5 py-1 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300" onclick="document.getElementById('year-min').value = 2019">от 2019</button>
+        <button type="button" class="text-[11px] px-2.5 py-1 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300" onclick="document.getElementById('mileage-max').value = 100000">до 100к км</button>
+      </div>
+    </div>
+
+    <!-- 5. ПТС, Владельцы, КПП -->
+    <div class="bg-gray-900/60 border border-gray-800 rounded-2xl p-4 space-y-4">
+      
+      <!-- Владельцы -->
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
+          <i class="fa-solid fa-users text-emerald-400"></i> Владельцев по ПТС
+        </label>
+        <div class="grid grid-cols-4 gap-1.5" id="owners-chips">
+          <button type="button" class="chip text-xs py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-center" onclick="selectOwners(this, 1)">1 вл.</button>
+          <button type="button" class="chip active text-xs py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-center" onclick="selectOwners(this, 2)">до 2 вл.</button>
+          <button type="button" class="chip text-xs py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-center" onclick="selectOwners(this, 3)">до 3 вл.</button>
+          <button type="button" class="chip text-xs py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-center" onclick="selectOwners(this, null)">Любое</button>
+        </div>
+      </div>
+
+      <!-- Тип ПТС -->
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
+          <i class="fa-solid fa-file-lines text-emerald-400"></i> Тип ПТС
+        </label>
+        <div class="space-y-1.5" id="pts-chips">
+          <button type="button" class="chip active w-full text-left text-xs p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-gray-200 flex items-center justify-between" onclick="selectPts(this, 'no_duplicate')">
+            <span>🚫 Без дубликатов (Оригинал или ЭПТС)</span>
+            <i class="fa-solid fa-check text-xs"></i>
+          </button>
+          <button type="button" class="chip w-full text-left text-xs p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-gray-200 flex items-center justify-between" onclick="selectPts(this, 'original')">
+            <span>📄 Строго оригинал ПТС</span>
+            <i class="fa-solid fa-check text-xs hidden"></i>
+          </button>
+          <button type="button" class="chip w-full text-left text-xs p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-gray-200 flex items-center justify-between" onclick="selectPts(this, 'any')">
+            <span>📑 Любой (включая дубликаты)</span>
+            <i class="fa-solid fa-check text-xs hidden"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- КПП -->
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
+          <i class="fa-solid fa-gear text-emerald-400"></i> Коробка передач (КПП)
+        </label>
+        <div class="grid grid-cols-3 gap-1.5" id="trans-chips">
+          <button type="button" class="chip active text-xs py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-center" onclick="selectTrans(this, 'auto')">🕹 Автомат</button>
+          <button type="button" class="chip text-xs py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-center" onclick="selectTrans(this, 'manual')">🕹 Механика</button>
+          <button type="button" class="chip text-xs py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-center" onclick="selectTrans(this, 'any')">⚙️ Любая</button>
+        </div>
+      </div>
+
+      <!-- Чекбокс Продавец -->
+      <div class="pt-2 border-t border-gray-800">
+        <label class="flex items-center space-x-2.5 cursor-pointer">
+          <input type="checkbox" id="exclude-dealers" checked class="w-4 h-4 rounded text-emerald-500 bg-gray-950 border-gray-700 focus:ring-0">
+          <span class="text-xs font-semibold text-gray-200">👤 Только собственники (без салонов и перекупов)</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Кнопка запуска -->
+    <div class="fixed bottom-0 left-0 right-0 p-4 bg-gray-950/90 backdrop-blur border-t border-gray-800 z-50">
+      <button type="submit" class="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-black font-extrabold text-sm shadow-xl shadow-emerald-500/20 transition flex items-center justify-center space-x-2">
+        <i class="fa-solid fa-rocket"></i>
+        <span>СОХРАНИТЬ И ЗАПУСТИТЬ ОХОТУ</span>
+      </button>
+    </div>
+  </form>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
+
+    let selectedBrand = '';
+    let excludedBrands = ['chery, haval, geely, changan, omoda, jaecoo, exeed, jetour'];
+    let selectedOwners = 2;
+    let selectedPts = 'no_duplicate';
+    let selectedTrans = 'auto';
+
+    function selectBrand(brand) {
+      selectedBrand = brand;
+      document.getElementById('custom-brand').value = '';
+      document.getElementById('selected-brand-label').innerText = brand || 'Любая марка';
+      const btns = document.querySelectorAll('#brand-chips .chip');
+      btns.forEach(b => {
+        b.classList.remove('active');
+        if ((!brand && b.innerText.includes('Любая')) || (brand && b.innerText === brand)) {
+          b.classList.add('active');
+        }
+      });
+    }
+
+    function toggleExclude(btn, val) {
+      btn.classList.toggle('active');
+      if (btn.classList.contains('active')) {
+        if (!excludedBrands.includes(val)) excludedBrands.push(val);
+      } else {
+        excludedBrands = excludedBrands.filter(x => x !== val);
+      }
+    }
+
+    function setPresetPrice(min, max) {
+      document.getElementById('price-min').value = min;
+      document.getElementById('price-max').value = max;
+    }
+
+    function selectOwners(btn, val) {
+      selectedOwners = val;
+      document.querySelectorAll('#owners-chips .chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    function selectPts(btn, val) {
+      selectedPts = val;
+      document.querySelectorAll('#pts-chips .chip').forEach(b => {
+        b.classList.remove('active');
+        b.querySelector('i').classList.add('hidden');
+      });
+      btn.classList.add('active');
+      btn.querySelector('i').classList.remove('hidden');
+    }
+
+    function selectTrans(btn, val) {
+      selectedTrans = val;
+      document.querySelectorAll('#trans-chips .chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    function submitFilter() {
+      const customBrandVal = document.getElementById('custom-brand').value.trim();
+      const finalBrand = customBrandVal || selectedBrand;
+      const pMin = parseInt(document.getElementById('price-min').value) || null;
+      const pMax = parseInt(document.getElementById('price-max').value) || null;
+      const yMin = parseInt(document.getElementById('year-min').value) || null;
+      const mMax = parseInt(document.getElementById('mileage-max').value) || null;
+      const excludeDealers = document.getElementById('exclude-dealers').checked;
+
+      const payload = {
+        name: `Охота: ${finalBrand || 'Все авто'}`,
+        platform: 'all',
+        brand: finalBrand,
+        model: '',
+        exclude_brands_models: excludedBrands.join(', '),
+        year_min: yMin,
+        year_max: null,
+        price_min: pMin,
+        price_max: pMax,
+        mileage_max: mMax,
+        owners_max: selectedOwners,
+        pts_type: selectedPts,
+        transmission: selectedTrans,
+        drive_type: 'any',
+        exclude_dealers: excludeDealers,
+        exclude_damaged: true,
+        stop_words: 'запрет, арест, без доков, залог'
+      };
+
+      if (tg) {
+        tg.HapticFeedback?.notificationOccurred('success');
+        tg.sendData(JSON.stringify(payload));
+        tg.close();
+      } else {
+        alert('Фильтр готов: ' + JSON.stringify(payload));
+      }
+    }
+  </script>
+</body>
+</html>
