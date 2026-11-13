@@ -1,6 +1,7 @@
 import os
 from pydantic_settings import BaseSettings
-from typing import Optional
+from pydantic import field_validator
+from typing import Optional, Union
 
 
 class Settings(BaseSettings):
@@ -14,6 +15,12 @@ class Settings(BaseSettings):
     WEB_PORT: int = 8000
 
     DATABASE_URL: str = "sqlite+aiosqlite:///autohunter.db"
+
+    @field_validator("TG_CHAT_ID", mode="before")
+    def parse_empty_chat_id(cls, v):
+        if not v or v == "" or str(v).strip() == "":
+            return None
+        return int(v)
 
     class Config:
         env_file = ".env"
