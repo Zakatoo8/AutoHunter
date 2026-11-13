@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import List, Optional
 from sqlalchemy import (
-    Column, Integer, String, Boolean, Float, DateTime, Text, ForeignKey, BigInteger
+    Column, Integer, String, Boolean, Float, DateTime, Text, ForeignKey
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -18,7 +18,13 @@ class SearchTask(Base):
     
     brand = Column(String(100), default="")
     model = Column(String(100), default="")
-    exclude_brands_models = Column(Text, default="")  # e.g. "Lada, Daewoo, Chery"
+    exclude_brands_models = Column(Text, default="")
+    exclude_countries = Column(Text, default="")  # e.g. "china, russia"
+    
+    body_type = Column(String(50), default="any")  # "any", "sedan", "suv", "hatchback", "wagon", "coupe", "liftback"
+    engine_type = Column(String(50), default="any")  # "any", "petrol", "diesel", "hybrid", "electro"
+    engine_volume_min = Column(Float, nullable=True)
+    engine_volume_max = Column(Float, nullable=True)
     
     year_min = Column(Integer, nullable=True)
     year_max = Column(Integer, nullable=True)
@@ -32,6 +38,7 @@ class SearchTask(Base):
     pts_type = Column(String(50), default="any")  # "any", "original", "electronic", "no_duplicate"
     transmission = Column(String(50), default="any")  # "any", "auto", "manual"
     drive_type = Column(String(50), default="any")  # "any", "4wd", "fwd", "rwd"
+    steering_wheel = Column(String(50), default="any")  # "any", "left", "right"
     
     exclude_dealers = Column(Boolean, default=True)
     exclude_damaged = Column(Boolean, default=True)
@@ -48,6 +55,11 @@ class SearchTask(Base):
             "brand": self.brand,
             "model": self.model,
             "exclude_brands_models": self.exclude_brands_models,
+            "exclude_countries": self.exclude_countries,
+            "body_type": self.body_type,
+            "engine_type": self.engine_type,
+            "engine_volume_min": self.engine_volume_min,
+            "engine_volume_max": self.engine_volume_max,
             "year_min": self.year_min,
             "year_max": self.year_max,
             "price_min": self.price_min,
@@ -57,6 +69,7 @@ class SearchTask(Base):
             "pts_type": self.pts_type,
             "transmission": self.transmission,
             "drive_type": self.drive_type,
+            "steering_wheel": self.steering_wheel,
             "exclude_dealers": self.exclude_dealers,
             "exclude_damaged": self.exclude_damaged,
             "stop_words": self.stop_words,
@@ -82,9 +95,14 @@ class CarListing(Base):
     mileage = Column(Integer, nullable=True)
     owners_count = Column(Integer, nullable=True)
     
-    pts_type = Column(String(50), default="")  # "Оригинал", "ЭПТС", "Дубликат"
-    transmission = Column(String(50), default="")  # "АКПП", "МКПП", "Робот", "Вариатор"
-    drive_type = Column(String(50), default="")  # "Передний", "Задний", "Полный (4WD)"
+    body_type = Column(String(50), default="")
+    engine_type = Column(String(50), default="")
+    engine_volume = Column(Float, nullable=True)
+    
+    pts_type = Column(String(50), default="")
+    transmission = Column(String(50), default="")
+    drive_type = Column(String(50), default="")
+    steering_wheel = Column(String(50), default="")
     
     seller_name = Column(String(150), default="")
     is_dealer = Column(Boolean, default=False)
@@ -125,9 +143,13 @@ class CarListing(Base):
             "price": self.price,
             "mileage": self.mileage,
             "owners_count": self.owners_count,
+            "body_type": self.body_type,
+            "engine_type": self.engine_type,
+            "engine_volume": self.engine_volume,
             "pts_type": self.pts_type,
             "transmission": self.transmission,
             "drive_type": self.drive_type,
+            "steering_wheel": self.steering_wheel,
             "seller_name": self.seller_name,
             "is_dealer": self.is_dealer,
             "city": self.city,
