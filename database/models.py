@@ -18,6 +18,7 @@ class SearchTask(Base):
     
     brand = Column(String(100), default="")
     model = Column(String(100), default="")
+    exclude_brands_models = Column(Text, default="")  # e.g. "Lada, Daewoo, Chery"
     
     year_min = Column(Integer, nullable=True)
     year_max = Column(Integer, nullable=True)
@@ -28,9 +29,13 @@ class SearchTask(Base):
     mileage_max = Column(Integer, nullable=True)
     owners_max = Column(Integer, nullable=True)
     
+    pts_type = Column(String(50), default="any")  # "any", "original", "electronic", "no_duplicate"
+    transmission = Column(String(50), default="any")  # "any", "auto", "manual"
+    drive_type = Column(String(50), default="any")  # "any", "4wd", "fwd", "rwd"
+    
     exclude_dealers = Column(Boolean, default=True)
     exclude_damaged = Column(Boolean, default=True)
-    stop_words = Column(Text, default="")  # comma separated
+    stop_words = Column(Text, default="")
     
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -42,12 +47,16 @@ class SearchTask(Base):
             "platform": self.platform,
             "brand": self.brand,
             "model": self.model,
+            "exclude_brands_models": self.exclude_brands_models,
             "year_min": self.year_min,
             "year_max": self.year_max,
             "price_min": self.price_min,
             "price_max": self.price_max,
             "mileage_max": self.mileage_max,
             "owners_max": self.owners_max,
+            "pts_type": self.pts_type,
+            "transmission": self.transmission,
+            "drive_type": self.drive_type,
             "exclude_dealers": self.exclude_dealers,
             "exclude_damaged": self.exclude_damaged,
             "stop_words": self.stop_words,
@@ -61,7 +70,7 @@ class CarListing(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     external_id = Column(String(100), unique=True, index=True, nullable=False)
-    platform = Column(String(50), nullable=False)  # 'drom', 'avito', 'autoru'
+    platform = Column(String(50), nullable=False)
     url = Column(String(500), nullable=False)
     
     title = Column(String(255), nullable=False)
@@ -72,6 +81,10 @@ class CarListing(Base):
     price = Column(Integer, nullable=False)
     mileage = Column(Integer, nullable=True)
     owners_count = Column(Integer, nullable=True)
+    
+    pts_type = Column(String(50), default="")  # "Оригинал", "ЭПТС", "Дубликат"
+    transmission = Column(String(50), default="")  # "АКПП", "МКПП", "Робот", "Вариатор"
+    drive_type = Column(String(50), default="")  # "Передний", "Задний", "Полный (4WD)"
     
     seller_name = Column(String(150), default="")
     is_dealer = Column(Boolean, default=False)
@@ -112,6 +125,9 @@ class CarListing(Base):
             "price": self.price,
             "mileage": self.mileage,
             "owners_count": self.owners_count,
+            "pts_type": self.pts_type,
+            "transmission": self.transmission,
+            "drive_type": self.drive_type,
             "seller_name": self.seller_name,
             "is_dealer": self.is_dealer,
             "city": self.city,

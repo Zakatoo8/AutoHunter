@@ -40,12 +40,16 @@ async def create_task(data: dict) -> SearchTask:
             platform=data.get("platform", "all"),
             brand=data.get("brand", "").strip(),
             model=data.get("model", "").strip(),
+            exclude_brands_models=data.get("exclude_brands_models", "").strip(),
             year_min=int(data["year_min"]) if data.get("year_min") else None,
             year_max=int(data["year_max"]) if data.get("year_max") else None,
             price_min=int(data["price_min"]) if data.get("price_min") else None,
             price_max=int(data["price_max"]) if data.get("price_max") else None,
             mileage_max=int(data["mileage_max"]) if data.get("mileage_max") else None,
             owners_max=int(data["owners_max"]) if data.get("owners_max") else None,
+            pts_type=data.get("pts_type", "any"),
+            transmission=data.get("transmission", "any"),
+            drive_type=data.get("drive_type", "any"),
             exclude_dealers=bool(data.get("exclude_dealers", True)),
             exclude_damaged=bool(data.get("exclude_damaged", True)),
             stop_words=data.get("stop_words", ""),
@@ -84,10 +88,6 @@ async def delete_task(task_id: int) -> bool:
 
 
 async def save_or_update_car(data: dict) -> Tuple[CarListing, bool, bool, Optional[int]]:
-    """
-    Saves new car or updates existing.
-    Returns: (car, is_new, price_changed, old_price)
-    """
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(CarListing).where(CarListing.external_id == data["external_id"])
@@ -106,6 +106,9 @@ async def save_or_update_car(data: dict) -> Tuple[CarListing, bool, bool, Option
                 price=int(data.get("price", 0)),
                 mileage=data.get("mileage"),
                 owners_count=data.get("owners_count"),
+                pts_type=data.get("pts_type", ""),
+                transmission=data.get("transmission", ""),
+                drive_type=data.get("drive_type", ""),
                 seller_name=data.get("seller_name", ""),
                 is_dealer=bool(data.get("is_dealer", False)),
                 city=data.get("city", ""),
