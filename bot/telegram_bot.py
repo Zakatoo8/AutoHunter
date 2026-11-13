@@ -1,17 +1,10 @@
 import logging
-import re
 from typing import Dict, Any, Optional
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
-from aiogram.types import (
-    InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-)
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import settings
 from database.db_manager import (
@@ -22,8 +15,7 @@ from checkers.vin_decoder import VinDecoder
 logger = logging.getLogger("AutoHunterBot")
 
 bot: Optional[Bot] = None
-storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
+dp = Dispatcher()
 
 
 def get_bot() -> Optional[Bot]:
@@ -33,444 +25,494 @@ def get_bot() -> Optional[Bot]:
     return bot
 
 
-class DetailedFilterState(StatesGroup):
-    waiting_brand_model = State()
-    waiting_excluded = State()
-    waiting_price = State()
-    waiting_years = State()
-    waiting_mileage = State()
-    waiting_owners = State()
-    waiting_pts = State()
-    waiting_transmission = State()
-    waiting_dealers = State()
+# Default configurator state
+default_config = {
+    "brand": "Любая",
+    "exclude_china": True,
+    "exclude_vaz": False,
+    "price_label": "1 — 2.2 млн ₽",
+    "price_min": 1000000,
+    "price_max": 2200000,
+    "year_label": "от 2015 г.",
+    "year_min": 2015,
+    "year_max": None,
+    "mileage_label": "до 150 000 км",
+    "mileage_max": 150000,
+    "owners_label": "до 2 владельцев",
+    "owners_max": 2,
+    "pts_type": "no_duplicate",      # "original", "no_duplicate", "any"
+    "transmission": "auto",          # "auto", "manual", "any"
+    "exclude_dealers": True          # True = только собственники
+}
+
+# In-memory storage for user configuration drafts
+user_configs: Dict[int, dict] = {}
+
+
+def get_user_cfg(user_id: int) -> dict:
+    if user_id not in user_configs:
+        user_configs[user_id] = dict(default_config)
+    return user_configs[user_id]
+
+
+def build_config_text(cfg: dict) -> str:
+    pts_map = {
+        "original": "📄 Только оригинал",
+        "no_duplicate": "🚫 Без дубликатов (Оригинал/ЭПТС)",
+        "any": "📑 Любой (включая дубликаты)"
+    }
+    trans_map = {
+        "auto": "🕹 Только автомат (АКПП/Робот)",
+        "manual": "🕹 Только механика",
+        "any": "⚙️ Любая коробка"
+    }
+    dealers_str = "👤 Только собственники" if cfg["exclude_dealers"] else "🏢 Все (включая салоны)"
+
+    excluded = []
+    if cfg["exclude_china"]:
+        excluded.append("Китайцы (Chery/Haval/Geely/Changan)")
+    if cfg["exclude_vaz"]:
+        excluded.append("АвтоВАЗ / Lada")
+    excluded_str = ", ".join(excluded) if excluded else "Нет"
+
+    text = (
+        "🎛 <b>КОНФИГУРАТОР ФИЛЬТРОВ ПОИСКА</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚗 <b>Марка:</b> {cfg['brand']}\n"
+        f"🚫 <b>Исключить:</b> {excluded_str}\n"
+        f"💰 <b>Бюджет:</b> {cfg['price_label']}\n"
+        f"📅 <b>Года выпуска:</b> {cfg['year_label']}\n"
+        f"⏱ <b>Пробег:</b> {cfg['mileage_label']}\n"
+        f"👥 <b>Владельцев по ПТС:</b> {cfg['owners_label']}\n"
+        f"📄 <b>Тип ПТС:</b> {pts_map.get(cfg['pts_type'])}\n"
+        f"🕹 <b>Коробка (КПП):</b> {trans_map.get(cfg['transmission'])}\n"
+        f"👤 <b>Продавец:</b> {dealers_str}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "<i>Нажимай кнопки ниже, чтобы моментально изменить любой параметр:</i>"
+    )
+    return text
+
+
+def build_main_keyboard(cfg: dict) -> InlineKeyboardMarkup:
+    pts_short = "Оригинал" if cfg["pts_type"] == "original" else "Без дублей" if cfg["pts_type"] == "no_duplicate" else "Любой"
+    trans_short = "АКПП" if cfg["transmission"] == "auto" else "МКПП" if cfg["transmission"] == "manual" else "Любая"
+    dealers_short = "Частники" if cfg["exclude_dealers"] else "Все продавцы"
+
+    china_btn = "✅ Без Китая" if cfg["exclude_china"] else "⚪️ Включая Китай"
+    vaz_btn = "✅ Без ВАЗ" if cfg["exclude_vaz"] else "⚪️ Включая ВАЗ"
+
+    kb = [
+        [
+            InlineKeyboardButton(text=f"🚗 Марка: {cfg['brand']}", callback_data="menu_brand"),
+            InlineKeyboardButton(text=f"💰 Цена: {cfg['price_label']}", callback_data="menu_price")
+        ],
+        [
+            InlineKeyboardButton(text=f"📅 Год: {cfg['year_label']}", callback_data="menu_year"),
+            InlineKeyboardButton(text=f"⏱ Пробег: {cfg['mileage_label']}", callback_data="menu_mileage")
+        ],
+        [
+            InlineKeyboardButton(text=f"👥 Владельцы: {cfg['owners_label']}", callback_data="menu_owners"),
+            InlineKeyboardButton(text=f"📄 ПТС: {pts_short}", callback_data="menu_pts")
+        ],
+        [
+            InlineKeyboardButton(text=f"🕹 КПП: {trans_short}", callback_data="menu_trans"),
+            InlineKeyboardButton(text=f"👤 Продавец: {dealers_short}", callback_data="toggle_dealers")
+        ],
+        [
+            InlineKeyboardButton(text=china_btn, callback_data="toggle_china"),
+            InlineKeyboardButton(text=vaz_btn, callback_data="toggle_vaz")
+        ],
+        [
+            InlineKeyboardButton(text="🚀 ЗАПУСТИТЬ ОХОТУ ПО ЭТИМ ФИЛЬТРАМ 🚀", callback_data="save_and_hunt")
+        ],
+        [
+            InlineKeyboardButton(text="📋 Мои активные задачи", callback_data="show_tasks"),
+            InlineKeyboardButton(text="🗑 Сбросить фильтр", callback_data="reset_tasks")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext):
-    await state.clear()
-    tasks = await get_active_tasks()
-    
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🎯 НАСТРОИТЬ ПОИСК АВТО (ПОЛНОСТЬЮ)")],
-            [KeyboardButton(text="📋 Активные фильтры"), KeyboardButton(text="🗑 Сбросить фильтры")]
-        ],
-        resize_keyboard=True
-    )
-
-    if not tasks:
-        text = (
-            "👋 <b>Добро пожаловать в AutoHunter!</b>\n\n"
-            "Сейчас мониторинг <b>остановлен</b>, так как нет активных фильтров.\n\n"
-            "Нажми кнопку ниже <b>«🎯 НАСТРОИТЬ ПОИСК АВТО»</b> — мы пошагово настроим:\n"
-            "• Марку / модель (и какие исключить)\n"
-            "• Цену от и до\n"
-            "• Количество владельцев\n"
-            "• Тип ПТС (оригинал, ЭПТС, без дубликатов)\n"
-            "• Коробку (автомат/механика)\n"
-            "• Отсев салонов и перекупов"
-        )
-    else:
-        text = (
-            f"🎯 <b>AutoHunter в активном поиске!</b>\n"
-            f"Активных фильтров: <b>{len(tasks)}</b>\n\n"
-            f"Площадки: Drom.ru, Auto.ru, Avito (Playwright)\n"
-            f"Как только появится подходящая тачка — она сразу прилетит сюда."
-        )
-
+@dp.message(Command("filter"))
+@dp.message(F.text)
+async def cmd_start(message: types.Message):
+    cfg = get_user_cfg(message.from_user.id)
+    text = build_config_text(cfg)
+    kb = build_main_keyboard(cfg)
     await message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 
-@dp.message(F.text == "🎯 НАСТРОИТЬ ПОИСК АВТО (ПОЛНОСТЬЮ)")
-@dp.message(Command("new"))
-async def start_wizard(message: types.Message, state: FSMContext):
-    await state.clear()
-    await state.set_state(DetailedFilterState.waiting_brand_model)
+# --- Callback Handlers for Quick Button Toggles ---
 
-    cancel_kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="❌ Отмена")]],
-        resize_keyboard=True
-    )
+@dp.callback_query(F.data == "main_menu")
+async def cb_main_menu(call: types.CallbackQuery):
+    cfg = get_user_cfg(call.from_user.id)
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
 
-    await message.answer(
-        "🛠 <b>[Шаг 1 из 9] МАРКА И МОДЕЛЬ</b>\n\n"
-        "Какую машину ищем?\n"
-        "<i>Примеры:\n"
-        "• <code>Toyota Camry</code>\n"
-        "• <code>BMW 3-Series</code>\n"
-        "• <code>Kia Rio</code>\n"
-        "• или напиши <b>'-'</b> (прочерк), если подойдет ЛЮБАЯ марка:</i>",
-        reply_markup=cancel_kb,
+
+@dp.callback_query(F.data == "toggle_dealers")
+async def cb_toggle_dealers(call: types.CallbackQuery):
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["exclude_dealers"] = not cfg["exclude_dealers"]
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
+
+
+@dp.callback_query(F.data == "toggle_china")
+async def cb_toggle_china(call: types.CallbackQuery):
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["exclude_china"] = not cfg["exclude_china"]
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
+
+
+@dp.callback_query(F.data == "toggle_vaz")
+async def cb_toggle_vaz(call: types.CallbackQuery):
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["exclude_vaz"] = not cfg["exclude_vaz"]
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
+
+
+# --- Sub-menu: Brand selection ---
+@dp.callback_query(F.data == "menu_brand")
+async def cb_menu_brand(call: types.CallbackQuery):
+    brands = [
+        ["Любая марка", "Toyota", "BMW"],
+        ["Mercedes-Benz", "Audi", "Volkswagen"],
+        ["Kia", "Hyundai", "Skoda"],
+        ["Nissan", "Mazda", "Lada (ВАЗ)"]
+    ]
+    kb = []
+    for row in brands:
+        kb.append([InlineKeyboardButton(text=b, callback_data=f"set_brand_{b}") for b in row])
+    kb.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")])
+
+    await call.message.edit_text(
+        "🚗 <b>ВЫБЕРИ МАРКУ АВТОМОБИЛЯ:</b>\n<i>Нажми кнопку нужной марки:</i>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
         parse_mode=ParseMode.HTML
     )
+    await call.answer()
 
 
-@dp.message(DetailedFilterState.waiting_brand_model)
-async def process_brand_model(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
+@dp.callback_query(F.data.startswith("set_brand_"))
+async def cb_set_brand(call: types.CallbackQuery):
+    brand = call.data.replace("set_brand_", "")
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["brand"] = brand
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer(f"Выбрана марка: {brand}")
 
-    text = message.text.strip()
-    brand, model = "", ""
-    if text != "-":
-        parts = text.split(" ", 1)
-        brand = parts[0]
-        model = parts[1] if len(parts) > 1 else ""
 
-    await state.update_data(brand=brand, model=model)
-    await state.set_state(DetailedFilterState.waiting_excluded)
+# --- Sub-menu: Price selection ---
+@dp.callback_query(F.data == "menu_price")
+async def cb_menu_price(call: types.CallbackQuery):
+    prices = [
+        ("До 700 000 ₽", 0, 700000),
+        ("700к — 1.3 млн ₽", 700000, 1300000),
+        ("1.3 — 2.2 млн ₽", 1300000, 2200000),
+        ("2.2 — 3.5 млн ₽", 2200000, 3500000),
+        ("3.5 — 6.0 млн ₽", 3500000, 6000000),
+        ("Любой бюджет", 0, None)
+    ]
+    kb = []
+    for label, p_min, p_max in prices:
+        kb.append([InlineKeyboardButton(text=label, callback_data=f"set_price_{p_min}_{p_max}_{label}")])
+    kb.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")])
 
-    skip_kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="➡️ Пропустить (ничего не исключать)")], [KeyboardButton(text="❌ Отмена")]],
-        resize_keyboard=True
-    )
-
-    await message.answer(
-        f"✅ Ищем: <b>{brand or 'Любая марка'} {model or ''}</b>\n\n"
-        "🛠 <b>[Шаг 2 из 9] КАКИЕ МАРКИ / МОДЕЛИ ИСКЛЮЧИТЬ?</b>\n"
-        "<i>Напиши через запятую то, что тебе точно НЕ показывать.\n"
-        "Например: <code>Lada, Chery, Haval, Geely, Daewoo</code>\n"
-        "Или нажми «Пропустить» ниже:</i>",
-        reply_markup=skip_kb,
+    await call.message.edit_text(
+        "💰 <b>ВЫБЕРИ ДИАПАЗОН БЮДЖЕТА (ЦЕНЫ):</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
         parse_mode=ParseMode.HTML
     )
+    await call.answer()
 
 
-@dp.message(DetailedFilterState.waiting_excluded)
-async def process_excluded(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
+@dp.callback_query(F.data.startswith("set_price_"))
+async def cb_set_price(call: types.CallbackQuery):
+    parts = call.data.replace("set_price_", "").split("_")
+    p_min = int(parts[0]) if parts[0] != "0" else None
+    p_max = int(parts[1]) if parts[1] != "None" else None
+    label = parts[2]
 
-    excluded = ""
-    if "пропустить" not in message.text.lower() and message.text.strip() != "-":
-        excluded = message.text.strip()
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["price_min"] = p_min
+    cfg["price_max"] = p_max
+    cfg["price_label"] = label
 
-    await state.update_data(exclude_brands_models=excluded)
-    await state.set_state(DetailedFilterState.waiting_price)
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
 
-    cancel_kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="❌ Отмена")]],
-        resize_keyboard=True
-    )
 
-    await message.answer(
-        f"✅ Исключено: <b>{excluded or 'Нет'}</b>\n\n"
-        "🛠 <b>[Шаг 3 из 9] ЦЕНА (БЮДЖЕТ)</b>\n"
-        "Укажи диапазон цен от и до:\n"
-        "<i>Примеры:\n"
-        "• <code>1000000 - 1800000</code>\n"
-        "• <code>до 2000000</code> (или <code>до 2м</code>)\n"
-        "• <code>от 800к</code>\n"
-        "• или <b>'-'</b> (любая цена)</i>",
-        reply_markup=cancel_kb,
+# --- Sub-menu: Year selection ---
+@dp.callback_query(F.data == "menu_year")
+async def cb_menu_year(call: types.CallbackQuery):
+    years = [
+        ("от 2010 г.", 2010),
+        ("от 2014 г.", 2014),
+        ("от 2017 г.", 2017),
+        ("от 2020 г.", 2020),
+        ("от 2022 г. (Свежие)", 2022),
+        ("Любой год", None)
+    ]
+    kb = []
+    for label, y_min in years:
+        kb.append([InlineKeyboardButton(text=label, callback_data=f"set_year_{y_min}_{label}")])
+    kb.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")])
+
+    await call.message.edit_text(
+        "📅 <b>ВЫБЕРИ ГОДА ВЫПУСКА:</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
         parse_mode=ParseMode.HTML
     )
+    await call.answer()
 
 
-@dp.message(DetailedFilterState.waiting_price)
-async def process_price(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
+@dp.callback_query(F.data.startswith("set_year_"))
+async def cb_set_year(call: types.CallbackQuery):
+    parts = call.data.replace("set_year_", "").split("_")
+    y_min = int(parts[0]) if parts[0] != "None" else None
+    label = parts[1]
 
-    text = message.text.lower().replace(" ", "").replace("кк", "000000").replace("м", "000000").replace("к", "000")
-    price_min, price_max = None, None
-    numbers = [int(n) for n in re.findall(r"\d+", text)]
-    if len(numbers) == 1:
-        if "от" in message.text.lower():
-            price_min = numbers[0]
-        else:
-            price_max = numbers[0]
-    elif len(numbers) >= 2:
-        price_min = min(numbers[0], numbers[1])
-        price_max = max(numbers[0], numbers[1])
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["year_min"] = y_min
+    cfg["year_label"] = label
 
-    await state.update_data(price_min=price_min, price_max=price_max)
-    await state.set_state(DetailedFilterState.waiting_years)
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
 
-    p_str = f"{price_min or 0:,} — {price_max or '∞':,} ₽".replace(",", " ")
-    await message.answer(
-        f"✅ Бюджет: <b>{p_str}</b>\n\n"
-        "🛠 <b>[Шаг 4 из 9] ГОДА ВЫПУСКА</b>\n"
-        "<i>Примеры:\n"
-        "• <code>2014 - 2019</code>\n"
-        "• <code>от 2016</code>\n"
-        "• <code>до 2021</code>\n"
-        "• или <b>'-'</b> (любой год)</i>",
+
+# --- Sub-menu: Mileage selection ---
+@dp.callback_query(F.data == "menu_mileage")
+async def cb_menu_mileage(call: types.CallbackQuery):
+    mileages = [
+        ("до 60 000 км", 60000),
+        ("до 110 000 км", 110000),
+        ("до 150 000 км", 150000),
+        ("до 200 000 км", 200000),
+        ("Любой пробег", None)
+    ]
+    kb = []
+    for label, m_max in mileages:
+        kb.append([InlineKeyboardButton(text=label, callback_data=f"set_mileage_{m_max}_{label}")])
+    kb.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")])
+
+    await call.message.edit_text(
+        "⏱ <b>ВЫБЕРИ МАКСИМАЛЬНЫЙ ПРОБЕГ:</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
         parse_mode=ParseMode.HTML
     )
+    await call.answer()
 
 
-@dp.message(DetailedFilterState.waiting_years)
-async def process_years(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
+@dp.callback_query(F.data.startswith("set_mileage_"))
+async def cb_set_mileage(call: types.CallbackQuery):
+    parts = call.data.replace("set_mileage_", "").split("_")
+    m_max = int(parts[0]) if parts[0] != "None" else None
+    label = parts[1]
 
-    text = message.text.strip()
-    year_min, year_max = None, None
-    if text != "-":
-        years = re.findall(r"\b(19\d{2}|20\d{2})\b", text)
-        if len(years) == 1:
-            if "до" in text.lower():
-                year_max = int(years[0])
-            else:
-                year_min = int(years[0])
-        elif len(years) >= 2:
-            year_min = min(int(years[0]), int(years[1]))
-            year_max = max(int(years[0]), int(years[1]))
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["mileage_max"] = m_max
+    cfg["mileage_label"] = label
 
-    await state.update_data(year_min=year_min, year_max=year_max)
-    await state.set_state(DetailedFilterState.waiting_mileage)
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
 
-    await message.answer(
-        f"✅ Года: <b>{year_min or '—'} - {year_max or '—'}</b>\n\n"
-        "🛠 <b>[Шаг 5 из 9] МАКСИМАЛЬНЫЙ ПРОБЕГ</b>\n"
-        "<i>Например: <code>150000</code> (или <code>150к</code>) или <b>'-'</b> (любой пробег):</i>",
+
+# --- Sub-menu: Owners selection ---
+@dp.callback_query(F.data == "menu_owners")
+async def cb_menu_owners(call: types.CallbackQuery):
+    owners = [
+        ("1️⃣ Только 1 владелец", 1, "1 владелец"),
+        ("2️⃣ До 2 владельцев", 2, "до 2 владельцев"),
+        ("3️⃣ До 3 владельцев", 3, "до 3 владельцев"),
+        ("♾ Любое количество", None, "любое количество")
+    ]
+    kb = []
+    for label, count, short in owners:
+        kb.append([InlineKeyboardButton(text=label, callback_data=f"set_owners_{count}_{short}")])
+    kb.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")])
+
+    await call.message.edit_text(
+        "👥 <b>СКОЛЬКО МАКСИМУМ ВЛАДЕЛЬЦЕВ ПО ПТС:</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
         parse_mode=ParseMode.HTML
     )
+    await call.answer()
 
 
-@dp.message(DetailedFilterState.waiting_mileage)
-async def process_mileage(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
+@dp.callback_query(F.data.startswith("set_owners_"))
+async def cb_set_owners(call: types.CallbackQuery):
+    parts = call.data.replace("set_owners_", "").split("_")
+    o_max = int(parts[0]) if parts[0] != "None" else None
+    label = parts[1]
 
-    text = message.text.lower().replace("к", "000").replace(" ", "")
-    digits = re.sub(r"[^\d]", "", text)
-    mileage_max = int(digits) if digits else None
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["owners_max"] = o_max
+    cfg["owners_label"] = label
 
-    await state.update_data(mileage_max=mileage_max)
-    await state.set_state(DetailedFilterState.waiting_owners)
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
 
-    owners_kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="1️⃣ Только 1 владелец"), KeyboardButton(text="2️⃣ До 2 владельцев")],
-            [KeyboardButton(text="3️⃣ До 3 владельцев"), KeyboardButton(text="♾ Любое количество")],
-            [KeyboardButton(text="❌ Отмена")]
-        ],
-        resize_keyboard=True
-    )
 
-    await message.answer(
-        f"✅ Пробег: <b>{f'до {mileage_max:,} км' if mileage_max else 'любой'}</b>\n\n"
-        "🛠 <b>[Шаг 6 из 9] КОЛИЧЕСТВО ВЛАДЕЛЬЦЕВ ПО ПТС</b>\n"
-        "<i>Выбери кнопкой ниже:</i>",
-        reply_markup=owners_kb,
+# --- Sub-menu: PTS selection ---
+@dp.callback_query(F.data == "menu_pts")
+async def cb_menu_pts(call: types.CallbackQuery):
+    kb = [
+        [InlineKeyboardButton(text="📄 Только оригинал ПТС", callback_data="set_pts_original")],
+        [InlineKeyboardButton(text="🚫 Без дубликатов (Оригинал или ЭПТС)", callback_data="set_pts_no_duplicate")],
+        [InlineKeyboardButton(text="📑 Любой ПТС (включая дубликаты)", callback_data="set_pts_any")],
+        [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")]
+    ]
+    await call.message.edit_text(
+        "📄 <b>ВЫБЕРИ ТРЕБОВАНИЯ К ПТС:</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
         parse_mode=ParseMode.HTML
     )
+    await call.answer()
 
 
-@dp.message(DetailedFilterState.waiting_owners)
-async def process_owners(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
+@dp.callback_query(F.data.startswith("set_pts_"))
+async def cb_set_pts(call: types.CallbackQuery):
+    pts = call.data.replace("set_pts_", "")
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["pts_type"] = pts
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
 
-    owners_max = None
-    if "1 владелец" in message.text or message.text.strip() == "1":
-        owners_max = 1
-    elif "2 владелец" in message.text or message.text.strip() == "2":
-        owners_max = 2
-    elif "3 владелец" in message.text or message.text.strip() == "3":
-        owners_max = 3
 
-    await state.update_data(owners_max=owners_max)
-    await state.set_state(DetailedFilterState.waiting_pts)
-
-    pts_kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📄 Только оригинал ПТС")],
-            [KeyboardButton(text="🚫 Без дубликатов (Оригинал или ЭПТС)")],
-            [KeyboardButton(text="📑 Любой ПТС (включая дубликаты)")],
-            [KeyboardButton(text="❌ Отмена")]
-        ],
-        resize_keyboard=True
-    )
-
-    await message.answer(
-        f"✅ Владельцев: <b>{f'до {owners_max}' if owners_max else 'любое'}</b>\n\n"
-        "🛠 <b>[Шаг 7 из 9] ТИП ПТС</b>\n"
-        "<i>Выбери вариант ПТС кнопкой:</i>",
-        reply_markup=pts_kb,
+# --- Sub-menu: Transmission selection ---
+@dp.callback_query(F.data == "menu_trans")
+async def cb_menu_trans(call: types.CallbackQuery):
+    kb = [
+        [InlineKeyboardButton(text="🕹 Только автомат (АКПП, Робот, Вариатор)", callback_data="set_trans_auto")],
+        [InlineKeyboardButton(text="🕹 Только механика (МКПП)", callback_data="set_trans_manual")],
+        [InlineKeyboardButton(text="⚙️ Любая коробка передач", callback_data="set_trans_any")],
+        [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")]
+    ]
+    await call.message.edit_text(
+        "🕹 <b>ВЫБЕРИ КОРОБКУ ПЕРЕДАЧ (КПП):</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
         parse_mode=ParseMode.HTML
     )
+    await call.answer()
 
 
-@dp.message(DetailedFilterState.waiting_pts)
-async def process_pts(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
-
-    pts_type = "any"
-    if "Только оригинал" in message.text:
-        pts_type = "original"
-    elif "Без дубликатов" in message.text:
-        pts_type = "no_duplicate"
-
-    await state.update_data(pts_type=pts_type)
-    await state.set_state(DetailedFilterState.waiting_transmission)
-
-    trans_kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🕹 Только автомат (АКПП, Робот, Вариатор)")],
-            [KeyboardButton(text="🕹 Только механика (МКПП)")],
-            [KeyboardButton(text="⚙️ Любая коробка")],
-            [KeyboardButton(text="❌ Отмена")]
-        ],
-        resize_keyboard=True
-    )
-
-    pts_label = "Только оригинал" if pts_type == "original" else "Без дубликатов (Оригинал/ЭПТС)" if pts_type == "no_duplicate" else "Любой"
-    await message.answer(
-        f"✅ ПТС: <b>{pts_label}</b>\n\n"
-        "🛠 <b>[Шаг 8 из 9] КОРОБКА ПЕРЕДАЧ (КПП)</b>\n"
-        "<i>Выбери коробку передач:</i>",
-        reply_markup=trans_kb,
-        parse_mode=ParseMode.HTML
-    )
+@dp.callback_query(F.data.startswith("set_trans_"))
+async def cb_set_trans(call: types.CallbackQuery):
+    trans = call.data.replace("set_trans_", "")
+    cfg = get_user_cfg(call.from_user.id)
+    cfg["transmission"] = trans
+    await call.message.edit_text(build_config_text(cfg), reply_markup=build_main_keyboard(cfg), parse_mode=ParseMode.HTML)
+    await call.answer()
 
 
-@dp.message(DetailedFilterState.waiting_transmission)
-async def process_transmission(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
+# --- Action: Save and Start Hunting ---
+@dp.callback_query(F.data == "save_and_hunt")
+async def cb_save_and_hunt(call: types.CallbackQuery):
+    cfg = get_user_cfg(call.from_user.id)
 
-    transmission = "any"
-    if "автомат" in message.text.lower():
-        transmission = "auto"
-    elif "механика" in message.text.lower():
-        transmission = "manual"
+    # Clean old tasks first so user only hunts their desired car
+    existing = await get_active_tasks()
+    for t in existing:
+        await delete_task(t.id)
 
-    await state.update_data(transmission=transmission)
-    await state.set_state(DetailedFilterState.waiting_dealers)
+    # Build excluded string
+    excluded = []
+    if cfg["exclude_china"]:
+        excluded.extend(["chery", "haval", "geely", "changan", "omoda", "jaecoo", "exeed", "jetour", "faw", "dongfeng", "voyah"])
+    if cfg["exclude_vaz"]:
+        excluded.extend(["lada", "ваз", "granta", "vesta", "niva"])
 
-    dealers_kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="👤 Только собственники (без салонов и перекупов)")],
-            [KeyboardButton(text="🏢 Все (включая автосалоны)")],
-            [KeyboardButton(text="❌ Отмена")]
-        ],
-        resize_keyboard=True
-    )
-
-    trans_label = "Только автомат" if transmission == "auto" else "Только механика" if transmission == "manual" else "Любая"
-    await message.answer(
-        f"✅ КПП: <b>{trans_label}</b>\n\n"
-        "🛠 <b>[Шаг 9 из 9] ПРОДАВЕЦ</b>\n"
-        "<i>Исключать автосалоны, дилеров и перекупов?</i>",
-        reply_markup=dealers_kb,
-        parse_mode=ParseMode.HTML
-    )
-
-
-@dp.message(DetailedFilterState.waiting_dealers)
-async def process_dealers(message: types.Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        return await cmd_start(message, state)
-
-    exclude_dealers = "Только собственники" in message.text
-    data = await state.get_data()
-    await state.clear()
-
-    brand = data.get("brand", "")
-    model = data.get("model", "")
-    name = f"{brand} {model}".strip() or "Охота на авто"
+    brand = "" if cfg["brand"] == "Любая марка" else cfg["brand"]
 
     task_payload = {
-        "name": name,
+        "name": f"Охота: {cfg['brand']}",
         "platform": "all",
         "brand": brand,
-        "model": model,
-        "exclude_brands_models": data.get("exclude_brands_models", ""),
-        "year_min": data.get("year_min"),
-        "year_max": data.get("year_max"),
-        "price_min": data.get("price_min"),
-        "price_max": data.get("price_max"),
-        "mileage_max": data.get("mileage_max"),
-        "owners_max": data.get("owners_max"),
-        "pts_type": data.get("pts_type", "any"),
-        "transmission": data.get("transmission", "any"),
+        "model": "",
+        "exclude_brands_models": ", ".join(excluded),
+        "year_min": cfg.get("year_min"),
+        "year_max": cfg.get("year_max"),
+        "price_min": cfg.get("price_min"),
+        "price_max": cfg.get("price_max"),
+        "mileage_max": cfg.get("mileage_max"),
+        "owners_max": cfg.get("owners_max"),
+        "pts_type": cfg.get("pts_type", "any"),
+        "transmission": cfg.get("transmission", "any"),
         "drive_type": "any",
-        "exclude_dealers": exclude_dealers,
+        "exclude_dealers": cfg.get("exclude_dealers", True),
         "exclude_damaged": True,
         "stop_words": "запрет, арест, без доков, залог"
     }
 
     new_task = await create_task(task_payload)
 
-    main_kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🎯 НАСТРОИТЬ ПОИСК АВТО (ПОЛНОСТЬЮ)")],
-            [KeyboardButton(text="📋 Активные фильтры"), KeyboardButton(text="🗑 Сбросить фильтры")]
-        ],
-        resize_keyboard=True
+    text = (
+        "🚀 <b>ОХОТА УСПЕШНО ЗАПУЩЕНА!</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚘 <b>Марка:</b> {cfg['brand']}\n"
+        f"💰 <b>Бюджет:</b> {cfg['price_label']}\n"
+        f"📅 <b>Год:</b> {cfg['year_label']}\n"
+        f"⏱ <b>Пробег:</b> {cfg['mileage_label']}\n"
+        f"👥 <b>Владельцев:</b> {cfg['owners_label']}\n"
+        f"📄 <b>ПТС:</b> {'Только оригинал' if cfg['pts_type'] == 'original' else 'Без дубликатов' if cfg['pts_type'] == 'no_duplicate' else 'Любой'}\n"
+        f"🕹 <b>КПП:</b> {'Автомат' if cfg['transmission'] == 'auto' else 'Механика' if cfg['transmission'] == 'manual' else 'Любая'}\n"
+        f"👤 <b>Продавец:</b> {'Только собственники' if cfg['exclude_dealers'] else 'Все'}\n"
+        f"🚫 <b>Исключения:</b> {', '.join(excluded) if excluded else 'Нет'}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⚡️ <b>Чекер прямо сейчас слушает Drom, Auto.ru и Avito.</b>\n"
+        "Как только появится тачка, идеально проходящая этот фильтр — карточка с фото сразу прилетит сюда."
     )
 
-    p_str = f"{new_task.price_min or 0:,} — {new_task.price_max or '∞':,} ₽".replace(",", " ")
-    pts_label = "Только оригинал" if new_task.pts_type == "original" else "Без дубликатов (Оригинал/ЭПТС)" if new_task.pts_type == "no_duplicate" else "Любой"
-    trans_label = "Только автомат" if new_task.transmission == "auto" else "Только механика" if new_task.transmission == "manual" else "Любая"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚙️ Изменить фильтры", callback_data="main_menu")],
+        [InlineKeyboardButton(text="🗑 Остановить поиск", callback_data="reset_tasks")]
+    ])
 
-    summary = (
-        "🚀 <b>ФИЛЬТР УСПЕШНО СОХРАНЕН И АКТИВИРОВАН!</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🚘 <b>Ищем:</b> {brand or 'Любая марка'} {model or ''}\n"
-        f"🚫 <b>Исключено:</b> {new_task.exclude_brands_models or 'Ничего'}\n"
-        f"💰 <b>Цена:</b> {p_str}\n"
-        f"📅 <b>Года:</b> {new_task.year_min or '—'} - {new_task.year_max or '—'}\n"
-        f"⏱ <b>Пробег:</b> {f'до {new_task.mileage_max:,} км' if new_task.mileage_max else 'любой'}\n"
-        f"👥 <b>Владельцев:</b> {f'до {new_task.owners_max}' if new_task.owners_max else 'любое'}\n"
-        f"📄 <b>Тип ПТС:</b> {pts_label}\n"
-        f"🕹 <b>КПП:</b> {trans_label}\n"
-        f"👤 <b>Продавец:</b> {'Только собственники' if new_task.exclude_dealers else 'Все'}\n"
-        f"🛡 <b>Исключение битых/запретов:</b> Включено\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "⚡️ <b>СКАНИРОВАНИЕ ЗАПУЩЕНО!</b> Как только на Drom, Auto.ru или Avito появится подходящая машина — карточка сразу прилетит сюда."
-    )
-
-    await message.answer(summary, reply_markup=main_kb, parse_mode=ParseMode.HTML)
+    await call.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await call.answer("Охота запущена!")
 
 
-@dp.message(F.text == "📋 Активные фильтры")
-@dp.message(Command("filters"))
-async def show_filters(message: types.Message):
-    tasks = await get_active_tasks()
-    if not tasks:
-        await message.answer("⚠️ Нет активных фильтров. Нажми кнопку <b>🎯 НАСТРОИТЬ ПОИСК АВТО</b>.")
-        return
-
-    text = "📋 <b>АКТИВНЫЕ ФИЛЬТРЫ МОНИТОРИНГА:</b>\n\n"
-    for i, t in enumerate(tasks, 1):
-        price_str = f"{t.price_min or 0:,} — {t.price_max or '∞':,} ₽".replace(",", " ")
-        years = f"{t.year_min or '—'} - {t.year_max or '—'}"
-        pts_label = "Только оригинал" if t.pts_type == "original" else "Без дубликатов" if t.pts_type == "no_duplicate" else "Любой"
-        trans_label = "Автомат" if t.transmission == "auto" else "Механика" if t.transmission == "manual" else "Любая"
-
-        text += (
-            f"<b>{i}. {t.name}</b>\n"
-            f"🚘 Авто: {t.brand or 'Любая'} {t.model or ''}\n"
-            f"🚫 Исключено: {t.exclude_brands_models or '—'}\n"
-            f"💰 Цена: {price_str} | 📅 Год: {years}\n"
-            f"⏱ Пробег: {f'до {t.mileage_max:,} км' if t.mileage_max else 'любой'}\n"
-            f"👥 Владельцев: {f'до {t.owners_max}' if t.owners_max else 'любое'}\n"
-            f"📄 ПТС: {pts_label} | 🕹 КПП: {trans_label}\n"
-            f"👤 Продавец: {'Только собственники' if t.exclude_dealers else 'Все'}\n\n"
-        )
-    await message.answer(text, parse_mode=ParseMode.HTML)
-
-
-@dp.message(F.text == "🗑 Сбросить фильтры")
-async def clear_all_filters(message: types.Message):
+@dp.callback_query(F.data == "reset_tasks")
+async def cb_reset_tasks(call: types.CallbackQuery):
     tasks = await get_active_tasks()
     for t in tasks:
         await delete_task(t.id)
-    await message.answer("🗑 Все фильтры удалены. Поиск остановлен.")
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎛 Настроить фильтр кнопками", callback_data="main_menu")]
+    ])
+    await call.message.edit_text("🛑 <b>Поиск полностью остановлен.</b> Все фильтры сброшены.", reply_markup=kb, parse_mode=ParseMode.HTML)
+    await call.answer("Поиск остановлен")
+
+
+@dp.callback_query(F.data == "show_tasks")
+async def cb_show_tasks(call: types.CallbackQuery):
+    tasks = await get_active_tasks()
+    if not tasks:
+        text = "⚠️ <b>Сейчас нет активных фильтров.</b> Настрой их кнопками ниже:"
+    else:
+        text = "📋 <b>АКТИВНЫЙ ФИЛЬТР МОНИТОРИНГА:</b>\n\n"
+        for t in tasks:
+            p_str = f"{t.price_min or 0:,} — {t.price_max or '∞':,} ₽".replace(",", " ")
+            text += (
+                f"🚗 Марка: {t.brand or 'Любая'}\n"
+                f"💰 Бюджет: {p_str}\n"
+                f"📅 Год: от {t.year_min or 'любого'}\n"
+                f"⏱ Пробег: {f'до {t.mileage_max:,} км' if t.mileage_max else 'любой'}\n"
+                f"👥 Владельцев: {f'до {t.owners_max}' if t.owners_max else 'любое'}\n"
+                f"👤 Продавец: {'Только собственники' if t.exclude_dealers else 'Все'}\n"
+            )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎛 Изменить фильтр", callback_data="main_menu")]
+    ])
+    await call.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await call.answer()
 
 
 async def send_car_notification(car: Dict[str, Any], task_name: str, is_update: bool = False, old_price: Optional[int] = None):
